@@ -1,0 +1,80 @@
+How to install NetBSD on a box with only a PXE boot capable NIC, keyboard,
+monitor, and a FreeBSD router.
+
+This was tested on FreeBSD 7.0 trying to install NetBSD 5.0.2. This process was
+adapted from http://bsdsupport.org/2007/01/netbsd-pxe-boot-install-without-nfs/
+
+* Download the necessary NetBSD boot loader and kernel:
+
+  # wget ftp://ftp.netbsd.org/pub/NetBSD/NetBSD-5.0.2/amd64/installation/misc/pxeboot_ia32.bin
+  # wget ftp://ftp.netbsd.org/pub/NetBSD/NetBSD-5.0.2/amd64/binary/kernel/netbsd-INSTALL.gz
+
+* Create directory to serve NetBSD, extract the kernel, and copy it and the
+  boot loader there:
+
+  # mkdir /tftpboot
+  # gunzip netbsd-INSTALL.gz
+  # cp netbsd-INSTALL /tftpboot
+  # cp pxeboot_ia32.bin /tftpboot
+
+* ``inetd`` and ``dhcpd`` need to be enabled, so add (or uncomment) these lines
+  in ``/etc/rc.conf``:
+
+  inetd_enable="YES"
+  dhcpd_enable="YES"
+
+* Allow ``inetd`` to start up ``tftpd`` when it gets requests by uncommenting
+  the line in ``/etc/inetd.conf`` that looks like:
+
+  tftp dgram udp wait root /usr/libexec/tftpd tftpd -l  -s /tftpboot
+
+* Configure ``dhcpd`` to serve ``pxeboot_ia32.bin`` by making your
+  ``/usr/local/etc/dhcpd.conf`` file look like the following. This
+  configuration assumes that the FreeBSD box has IP 192.168.0.1 and is running
+  all of the services (dhcp and tftp). If the tftp server is on a different
+  server then you should change the value of ``next-server`` appropriately.
+  Also, if the dhcp server is not the router for the network you can change the
+  value of ``option routers``.
+
+  # option definitions common to all supported networks...
+  option domain-name "domain.local";
+  option domain-name-servers 192.168.0.1, 208.67.222.222, 208.67.220.220;
+  option subnet-mask 255.255.255.0;
+
+  default-lease-time 3600;
+  max-lease-time 86400;
+
+  # If this DHCP server is the official DHCP server for the local
+  # network, the authoritative directive should be uncommented.
+  authoritative;
+
+  # ad-hoc DNS update scheme - set to "none" to disable dynamic DNS updates.
+  ddns-update-style none;
+
+  # Use this to send dhcp log messages to a different log file (you also
+  # have to hack syslog.conf to complete the redirection).
+  log-facility local7;
+
+  subnet 192.168.0.0 netmask 255.255.255.0 {
+      range 192.168.0.150 192.168.0.200;
+      option routers 192.168.0.1;
+      next-server 192.168.0.1;
+      option root-path "/tftpboot";
+      filename "/pxeboot_ia32.bin";
+  }
+
+* Now you need to restart (or start) ``inetd`` and ``dhcpd``:
+
+  # /etc/rc.d/inetd restart
+  # /usr/local/etc/rc.d/isc-dhcpd restart
+
+* Now you can fire up the target box. As it attempts to PXE boot, your dhcpd
+  server will send it ``pxeboot_ia32.bin``, the target box will run it and
+  attempt to load the NetBSD kernel -- but you must abort this by pressing some
+  key (other than enter/return). Once aborted you should be dropped to a
+  bootloader prompt where you want to give the command to boot from the kernel
+  being served by your tftp server:
+
+  > boot tftp:netbsd-INSTALL
+
+* At this point you will be booted into the typical NetBSD installation process.
